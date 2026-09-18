@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZATICS v3.0 // Cyclone Impact Forecaster — Anticipatory Action Platform</title>
+
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+
+  <!-- Custom Tactical Stylesheet -->
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- ==========================================================================
+       TACTICAL HEADER & OPERATIONS CONTROLS
+       ========================================================================== -->
+  <header class="header-bar">
+    <div class="brand-section">
+      <div class="brand-badge">
+        <span class="radar-dot"></span>
+        <span>ZATICS v3.0</span>
+      </div>
+      <div class="brand-titles">
+        <h1>
+          CYCLONE IMPACT FORECASTER
+          <span style="font-size:0.75rem; color:#38bdf8; font-family:var(--font-mono); font-weight:600;">[JAWHAR]</span>
+        </h1>
+        <div class="sub-text">
+          <span>Bay of Bengal & Coastal Andhra Pradesh Operations</span>
+          <span class="provenance-pill">📡 IMD Lead Time: 36h</span>
+          <span class="provenance-pill">🛰️ GEE Sentinel-1 SAR & DEM</span>
+          <span class="provenance-pill">✨ Gemini 3.7 Flash</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sequential Forecast Updates Selector -->
+    <div class="update-controls">
+      <span class="update-label">Forecast:</span>
+      <button class="update-btn" data-update="update-01" id="btn-update-01">
+        Update 01 <span class="tag">(S. Landfall)</span>
+      </button>
+      <button class="update-btn" data-update="update-02" id="btn-update-02">
+        Update 02 <span class="tag">(Central)</span>
+      </button>
+      <button class="update-btn active" data-update="update-03" id="btn-update-03">
+        Update 03 <span class="tag">(Recurvature ⚡)</span>
+      </button>
+    </div>
+
+    <!-- Quick Action Launchers -->
+    <div class="nav-actions">
+      <button class="nav-btn diff-btn" onclick="openDiffModal()">
+        <span>⚡ What Changed?</span>
+      </button>
+      <button class="nav-btn primary" onclick="openAdvisoryModal()">
+        <span>🤖 AI Advisory</span>
+      </button>
+      <button class="nav-btn" onclick="openInsuranceModal()">
+        <span>🛡️ Parametric Insurance</span>
+      </button>
+      <button class="nav-btn" onclick="openBriefingModal()">
+        <span>📋 District Briefing</span>
+      </button>
+      <button class="nav-btn citizen-btn" onclick="openCitizenModal()">
+        <span>🚨 Citizen Portal</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ==========================================================================
+       DYNAMIC PARAMETRIC EVENT / POLICY MONITORING ALERT BAR
+       ========================================================================== -->
+  <div id="policy-alert-banner" class="policy-alert-banner" style="display:none;" onclick="openInsuranceModal()">
+    <div class="banner-inner">
+      <div class="banner-left">
+        <span class="banner-pulse"></span>
+        <span class="banner-tag">ACTIVE PARAMETRIC TRIGGER</span>
+        <span class="banner-summary" id="banner-policy-summary">Policy pol-01 (Kakinada Port) breached contract thresholds (158 km/h wind / 3.4m surge)</span>
+      </div>
+      <div class="banner-right">
+        <div class="banner-badges">
+          <span class="status-pill status-pill-triggered">⚡ TRIGGERED</span>
+          <span class="status-pill status-pill-verified">✓ VERIFIED</span>
+          <span class="status-pill status-pill-ready">💰 PAYOUT READY</span>
+        </div>
+        <button class="banner-action-btn" onclick="event.stopPropagation(); openInsuranceModal();">Inspect Parametric Triggers →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       KPI METRIC STRIP
+       ========================================================================== -->
+  <section class="metric-strip">
+    <div class="kpi-card critical">
+      <div class="kpi-content">
+        <span class="kpi-label">Immediate Attention Assets (≥75)</span>
+        <div class="kpi-value-row">
+          <span class="kpi-value" id="kpi-critical-count">12</span>
+          <span class="kpi-delta up">+7 on Recurve</span>
+        </div>
+      </div>
+      <div class="kpi-icon">🏥</div>
+    </div>
+
+    <div class="kpi-card warning">
+      <div class="kpi-content">
+        <span class="kpi-label">Exposed Dependent Population</span>
+        <div class="kpi-value-row">
+          <span class="kpi-value" id="kpi-exposed-pop">1,420,000</span>
+          <span class="kpi-delta neutral">High Density</span>
+        </div>
+      </div>
+      <div class="kpi-icon">👥</div>
+    </div>
+
+    <div class="kpi-card info">
+      <div class="kpi-content">
+        <span class="kpi-label">Active Surge Scenario</span>
+        <div class="kpi-value-row">
+          <span class="kpi-value" id="kpi-surge-info">2.8m (CENTRAL)</span>
+          <span class="kpi-delta neutral">Inundation Risk</span>
+        </div>
+      </div>
+      <div class="kpi-icon">🌊</div>
+    </div>
+
+    <div class="kpi-card action">
+      <div class="kpi-content">
+        <span class="kpi-label">Top Priority Action</span>
+        <div class="kpi-value-row">
+          <span class="kpi-value" style="font-size:0.88rem; font-weight:600; line-height:1.3;" id="kpi-top-action">
+            Deploy mobile 500kVA DG set & oxygen buffer to KGH Visakhapatnam
+          </span>
+        </div>
+      </div>
+      <div class="kpi-icon">🎯</div>
+    </div>
+  </section>
+
+  <!-- ==========================================================================
+       MAIN COMMAND LAYOUT (SPLIT VIEW)
+       ========================================================================== -->
+  <main class="main-layout">
+    <!-- Geospatial Leaflet Map Container -->
+    <div class="map-container">
+      <div id="map"></div>
+
+      <!-- Floating Map Layer Controls -->
+      <div class="map-floating-panel">
+        <h3>
+          <span>Hazard & Satellite Overlays</span>
+          <span style="font-size:0.7rem; color:#38bdf8;">GEE Live</span>
+        </h3>
+        <div class="layer-group">
+          <label class="layer-toggle">
+            <span>🛰️ GEE Sentinel-1 SAR Radar Flood</span>
+            <input type="checkbox" id="layer-gee-sar" checked>
+          </label>
+          <label class="layer-toggle">
+            <span>🌊 Storm Surge Inundation</span>
+            <input type="checkbox" id="layer-surge" checked>
+          </label>
+        </div>
+
+        <div style="font-size:0.72rem; color:#94a3b8; margin-top:0.4rem;">Surge Scenario Height:</div>
+        <div class="scenario-pills">
+          <button class="scenario-pill" data-scenario="low">Low (1.5m)</button>
+          <button class="scenario-pill active" data-scenario="central">Central (2.8m)</button>
+          <button class="scenario-pill" data-scenario="high">High (4.2m)</button>
+        </div>
+      </div>
+
+      <!-- Map Legend -->
+      <div class="map-legend">
+        <div class="legend-item">
+          <div class="legend-color" style="background:#ef4444;"></div>
+          <span>Immediate Attention (≥75)</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color" style="background:#f59e0b;"></div>
+          <span>Prioritize (50-74)</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color" style="background:#06b6d4;"></div>
+          <span>Prepare (25-49)</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color" style="background:#10b981;"></div>
+          <span>Monitor (&lt;25)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ranked Action Queue Panel (Right Side) -->
+    <section class="queue-panel">
+      <div class="queue-header">
+        <div class="queue-title-row">
+          <div class="queue-title">
+            <span>🎯 Ranked Infrastructure Action Queue</span>
+            <span class="queue-count" id="queue-count-badge">38 Assets</span>
+          </div>
+        </div>
+
+        <!-- Filters & Search -->
+        <div class="filter-bar">
+          <select class="filter-select" id="district-filter">
+            <option value="all">All Districts</option>
+          </select>
+
+          <select class="filter-select" id="type-filter">
+            <option value="all">All Asset Types</option>
+            <option value="Hospital">Hospitals & Trauma</option>
+            <option value="Substation">Power Substations</option>
+            <option value="Bridge">Bridges & Arteries</option>
+            <option value="Cyclone Shelter">Cyclone Shelters</option>
+            <option value="Water Treatment">Water Treatment</option>
+            <option value="School">Relief Centers</option>
+          </select>
+
+          <select class="filter-select" id="risk-filter">
+            <option value="all">All Risk Bands</option>
+            <option value="Immediate Attention">Immediate Attention</option>
+            <option value="Prioritize">Prioritize</option>
+            <option value="Prepare">Prepare</option>
+            <option value="Monitor">Monitor</option>
+          </select>
+        </div>
+
+        <input type="text" class="search-input" id="search-input" placeholder="🔍 Search infrastructure asset name or location...">
+      </div>
+
+      <!-- Scored Asset Cards Scroll Container -->
+      <div class="asset-cards-container" id="asset-cards-container">
+        <!-- Rendered dynamically by app.js -->
+      </div>
+    </section>
+  </main>
+
+  <!-- ==========================================================================
+       ASSET INSPECTION DRAWER (SLIDE-OVER)
+       ========================================================================== -->
+  <aside class="inspection-drawer" id="inspection-drawer">
+    <div class="drawer-header">
+      <div class="drawer-title">
+        <h3 id="drawer-asset-name">Asset Name</h3>
+        <span style="font-size:0.75rem; color:#94a3b8;" id="drawer-asset-type">Hospital • KAKINADA</span>
+      </div>
+      <button class="close-btn" onclick="closeDrawer()">✕</button>
+    </div>
+
+    <div class="drawer-body">
+      <!-- Total Score & Band Card -->
+      <div class="detail-card" style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <span style="font-size:0.75rem; color:#94a3b8;">Deterministic Impact Priority Score</span>
+          <div style="font-size:1.8rem; font-weight:800; font-family:var(--font-mono); color:#f8fafc;" id="drawer-total-score">88/100</div>
+        </div>
+        <span class="score-badge risk-immediate" id="drawer-risk-badge">Immediate Attention</span>
+      </div>
+
+      <!-- Factor Score Decomposition -->
+      <div class="detail-card">
+        <h5>📐 Score Decomposition (PRD Formula)</h5>
+        <div class="factor-decomp-grid">
+          <div class="factor-row">
+            <div class="factor-row-header">
+              <span id="factor-title-hazard">Hazard Exposure (0.35)</span>
+              <span id="factor-score-hazard" style="font-weight:700; color:#f87171;">31 / 35 pts</span>
+            </div>
+            <div class="factor-progress-bg"><div class="factor-progress-fill" id="factor-fill-hazard" style="background:#ef4444; width:88%;"></div></div>
+          </div>
+
+          <div class="factor-row">
+            <div class="factor-row-header">
+              <span id="factor-title-vuln">Vulnerability (0.25)</span>
+              <span id="factor-score-vuln" style="font-weight:700; color:#fbbf24;">22 / 25 pts</span>
+            </div>
+            <div class="factor-progress-bg"><div class="factor-progress-fill" id="factor-fill-vuln" style="background:#f59e0b; width:85%;"></div></div>
+          </div>
+
+          <div class="factor-row">
+            <div class="factor-row-header">
+              <span id="factor-title-conseq">Consequence (0.20)</span>
+              <span id="factor-score-conseq" style="font-weight:700; color:#c084fc;">18 / 20 pts</span>
+            </div>
+            <div class="factor-progress-bg"><div class="factor-progress-fill" id="factor-fill-conseq" style="background:#8b5cf6; width:90%;"></div></div>
+          </div>
+
+          <div class="factor-row">
+            <div class="factor-row-header">
+              <span id="factor-title-access">Access Criticality (0.10)</span>
+              <span id="factor-score-access" style="font-weight:700; color:#38bdf8;">9 / 10 pts</span>
+            </div>
+            <div class="factor-progress-bg"><div class="factor-progress-fill" id="factor-fill-access" style="background:#06b6d4; width:90%;"></div></div>
+          </div>
+
+          <div class="factor-row">
+            <div class="factor-row-header">
+              <span id="factor-title-conf">Data Confidence (0.10)</span>
+              <span id="factor-score-conf" style="font-weight:700; color:#34d399;">8 / 10 pts</span>
+            </div>
+            <div class="factor-progress-bg"><div class="factor-progress-fill" id="factor-fill-conf" style="background:#10b981; width:80%;"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Physical Parameters & GEE Evidence -->
+      <div class="detail-card">
+        <h5>🛰️ Physical Parameters & Satellite Evidence</h5>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem; font-size:0.78rem;">
+          <div><b>DEM Elevation:</b> <span id="drawer-elevation">3.2 m</span></div>
+          <div><b>Population Served:</b> <span id="drawer-pop-served">250,000</span></div>
+          <div><b>Backup Power:</b> <span id="drawer-power-status">Unverified / None</span></div>
+          <div><b>GEE SAR Watermask:</b> <span style="color:#38bdf8;">84% Inundation</span></div>
+        </div>
+      </div>
+
+      <!-- Scenario Sensitivity Analysis -->
+      <div class="detail-card">
+        <h5>🔀 Scenario Sensitivity (+/-35km Shifts)</h5>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.5rem; text-align:center;">
+          <div style="background:#111827; padding:0.4rem; border-radius:4px;">
+            <div style="font-size:0.7rem; color:#94a3b8;">Left (-35km)</div>
+            <div style="font-weight:700; font-size:1.1rem; color:#38bdf8;" id="sens-left">76</div>
+          </div>
+          <div style="background:#111827; padding:0.4rem; border-radius:4px; border:1px solid #0284c7;">
+            <div style="font-size:0.7rem; color:#38bdf8;">Center Track</div>
+            <div style="font-weight:700; font-size:1.1rem; color:#fff;" id="sens-center">88</div>
+          </div>
+          <div style="background:#111827; padding:0.4rem; border-radius:4px;">
+            <div style="font-size:0.7rem; color:#94a3b8;">Right (+35km)</div>
+            <div style="font-weight:700; font-size:1.1rem; color:#f87171;" id="sens-right">94</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Prescriptive Action -->
+      <div class="detail-card" style="border-left:4px solid #38bdf8;">
+        <h5>🎯 Mandated Operational Action</h5>
+        <p style="font-size:0.82rem; color:#e2e8f0;" id="drawer-recommended-action">
+          Immediate positioning of dual 500kVA emergency generator sets and deployment of flood barrier barricades at ground-floor power intake.
+        </p>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ==========================================================================
+       "WHAT CHANGED?" DIFF MODAL
+       ========================================================================== -->
+  <div class="modal-overlay" id="diff-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><span>⚡ "What Changed?" Track Recurvature Diff Engine</span></h3>
+        <button class="close-btn" onclick="closeModal('diff-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="diff-alert-banner">
+          <b>Forecast Comparison:</b> <span id="diff-from-label">UPDATE-01</span> ➔ <span id="diff-to-label">UPDATE-03</span>
+          <p style="margin-top:4px; font-size:0.8rem;" id="diff-narrative">
+            Cyclone JAWHAR underwent a 38km North-East track recurvature. Landfall trajectory shifted from southern Bapatla corridor towards Kakinada/Visakhapatnam, escalating 7 critical health and power assets into Immediate Attention.
+          </p>
+        </div>
+
+        <h4 style="font-size:0.85rem; color:#94a3b8; text-transform:uppercase; margin-bottom:0.6rem;">
+          🚨 Newly Escalated to Immediate Attention
+        </h4>
+        <div class="diff-list" id="diff-new-high-risk">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="nav-btn" onclick="closeModal('diff-modal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       AUTOMATED ADVISORY & HUMAN-IN-THE-LOOP DISPATCH MODAL
+       ========================================================================== -->
+  <div class="modal-overlay" id="advisory-modal">
+    <div class="modal-card" style="max-width:850px;">
+      <div class="modal-header">
+        <h3><span>🤖 Automated Advisory Center (Human-in-the-Loop)</span></h3>
+        <button class="close-btn" onclick="closeModal('advisory-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; margin-bottom:0.75rem;">
+          <div>
+            <label style="font-size:0.75rem; color:#94a3b8;">Target District:</label>
+            <select class="filter-select" id="advisory-district-select" onchange="draftAdvisory()">
+              <option value="kakinada">Kakinada District</option>
+              <option value="visakhapatnam">Visakhapatnam District</option>
+              <option value="krishna">Krishna / Machilipatnam</option>
+              <option value="bapatla">Bapatla District</option>
+              <option value="srikakulam">Srikakulam District</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.75rem; color:#94a3b8;">Target Stakeholder / Agency:</label>
+            <select class="filter-select" id="advisory-audience-select" onchange="draftAdvisory()">
+              <option value="District Administration">District Disaster Management Authority (DDMA)</option>
+              <option value="Power Utility">State Power Transmission & Discom</option>
+              <option value="Port & Maritime">Port Authorities & Coast Guard</option>
+              <option value="Fisheries">Fisheries & Coastal Communities</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Grounding Info Box -->
+        <div class="grounding-box" id="advisory-grounding-summary">
+          Grounding Evidence: IMD Track Update-03 + GEE Sentinel-1 SAR Coastal Radar Mask + DEM 30m
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.5rem;">
+          <label style="font-size:0.78rem; font-weight:700; color:#f8fafc;">Evidence-Grounded Advisory Draft (Editable):</label>
+          <span class="trigger-status-badge monitoring" id="advisory-status-badge">Draft Ready</span>
+        </div>
+
+        <textarea class="advisory-textarea" id="advisory-textarea" placeholder="Generating draft..."></textarea>
+
+        <!-- Dispatch Authorization & Channel -->
+        <div style="display:grid; grid-template-columns:1.2fr 1fr; gap:0.75rem; margin-top:0.75rem; background:#1e293b; padding:0.75rem; border-radius:6px;">
+          <div>
+            <label style="font-size:0.72rem; color:#94a3b8;">Authorized Sign-Off (Incident Commander):</label>
+            <input type="text" class="filter-select" id="advisory-approver-name" value="Dr. S. K. Rao (District Collector & Magistrate)">
+          </div>
+          <div>
+            <label style="font-size:0.72rem; color:#94a3b8;">Dispatch Network Channel:</label>
+            <select class="filter-select" id="advisory-dispatch-channel">
+              <option value="AP State Disaster Alert Network">AP State Disaster Alert Network (High Priority)</option>
+              <option value="Police VHF & Ham Radio">Police VHF & Ham Radio Net</option>
+              <option value="Public Cell Broadcast & SACHET">Public Cell Broadcast & SACHET</option>
+              <option value="Power Utility SCADA Broadcast">Power Utility SCADA Broadcast</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="nav-btn" id="btn-draft-advisory" onclick="draftAdvisory()">🤖 Re-draft with Gemini</button>
+        <button class="nav-btn primary" onclick="approveAndDispatchAdvisory()">
+          <span>✅ Approve & Dispatch Advisory</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       PARAMETRIC INSURANCE READINESS & EVENT MONITORING MODAL
+       ========================================================================== -->
+  <div class="modal-overlay" id="insurance-modal">
+    <div class="modal-card" style="max-width:920px;">
+      <div class="modal-header">
+        <div>
+          <h3 style="margin-bottom:0.2rem;"><span>🛡️ Parametric Insurance & Event Trigger Monitoring</span></h3>
+          <span style="font-size:0.75rem; color:#94a3b8;">Automated contract monitoring, dual-oracle verification, and multi-sig payout readiness</span>
+        </div>
+        <button class="close-btn" onclick="closeModal('insurance-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        
+        <!-- State Machine Distinction Legend -->
+        <div class="policy-state-legend">
+          <div class="legend-header">
+            <span class="legend-title">⚡ Operational State Decoupling Architecture</span>
+            <span class="legend-note">Strict 3-phase progression to prevent premature liquidity disbursement</span>
+          </div>
+          <div class="legend-grid">
+            <div class="legend-card">
+              <div class="legend-pill-wrap">
+                <span class="status-pill status-pill-triggered">⚡ TRIGGERED</span>
+              </div>
+              <p>Physical threshold breached (e.g., Wind &gt; 135 km/h or Surge &gt; 2.5m). Alerts response commanders.</p>
+            </div>
+            <div class="legend-card">
+              <div class="legend-pill-wrap">
+                <span class="status-pill status-pill-verified">✓ VERIFIED</span>
+              </div>
+              <p>IMD Doppler Radar / Sentinel-1 SAR confirms sensor data integrity against adversarial noise.</p>
+            </div>
+            <div class="legend-card">
+              <div class="legend-pill-wrap">
+                <span class="status-pill status-pill-ready">💰 PAYOUT READY</span>
+              </div>
+              <p>Multi-sig smart contract consensus (3-of-4 signers) reached. Immediate relief liquidity unlocked.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Metric Summary & Filter Tabs -->
+        <div class="policy-filter-bar">
+          <div class="policy-filter-tabs">
+            <button class="policy-filter-tab active" data-filter="all" onclick="filterPolicyCards('all', this)">All Policies (<span id="count-all-policies">4</span>)</button>
+            <button class="policy-filter-tab" data-filter="triggered" onclick="filterPolicyCards('triggered', this)">⚡ Triggered Active (<span id="count-triggered-policies">2</span>)</button>
+            <button class="policy-filter-tab" data-filter="ready" onclick="filterPolicyCards('ready', this)">💰 Payout Ready (<span id="count-ready-policies">1</span>)</button>
+          </div>
+          <div class="policy-live-indicator">
+            <span class="live-dot"></span> Telemetry Feed Active (IMD/GEE Oracles)
+          </div>
+        </div>
+
+        <!-- Grid of Reusable Policy Alert Cards -->
+        <div class="insurance-grid" id="insurance-grid">
+          <!-- Rendered dynamically by renderPolicyAlertCard() -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="nav-btn" onclick="closeModal('insurance-modal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       POLICY FORENSIC DETAILS & AUDIT TRAIL MODAL
+       ========================================================================== -->
+  <div class="modal-overlay" id="policy-details-modal">
+    <div class="modal-card" style="max-width:800px;">
+      <div class="modal-header">
+        <div>
+          <h3 style="margin-bottom:0.2rem;"><span id="det-policy-title">📋 Policy Forensic Telemetry & Audit Detail</span></h3>
+          <span style="font-size:0.75rem; color:#94a3b8;" id="det-policy-subtitle">Policy ID: pol-01 · Cryptographic Proof of Trigger</span>
+        </div>
+        <button class="close-btn" onclick="closeModal('policy-details-modal')">✕</button>
+      </div>
+      <div class="modal-body" id="policy-details-body" style="font-size:0.85rem; line-height:1.5;">
+        <!-- Injected dynamically -->
+      </div>
+      <div class="modal-footer">
+        <button class="nav-btn" onclick="closeModal('policy-details-modal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       DISTRICT EXECUTIVE BRIEFING MODAL
+       ========================================================================== -->
+  <div class="modal-overlay" id="briefing-modal">
+    <div class="modal-card" style="max-width:880px;">
+      <div class="modal-header">
+        <h3><span>📋 District Magistrate Executive Preparedness Briefing</span></h3>
+        <button class="close-btn" onclick="closeModal('briefing-modal')">✕</button>
+      </div>
+      <div class="modal-body" id="briefing-content" style="font-size:0.85rem; line-height:1.6; color:#e2e8f0;">
+        <!-- Rendered dynamically -->
+      </div>
+      <div class="modal-footer">
+        <button class="nav-btn" onclick="copyBriefing()">📋 Copy Markdown</button>
+        <button class="nav-btn primary" onclick="printBriefing()">🖨️ Export PDF / Print</button>
+        <button class="nav-btn" onclick="closeModal('briefing-modal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       CITIZEN SAFETY PORTAL & MULTILINGUAL VOICE COPILOT MODAL
+       ========================================================================== -->
+  <div class="modal-overlay" id="citizen-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><span>🚨 Citizen Safety & Emergency Shelter Assistant</span></h3>
+        <button class="close-btn" onclick="closeModal('citizen-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; margin-bottom:1rem;">
+          <div>
+            <label style="font-size:0.75rem; color:#94a3b8;">Select Your Location / District:</label>
+            <select class="filter-select" id="citizen-district-select">
+              <option value="kakinada">Kakinada (Coastal Zone)</option>
+              <option value="visakhapatnam">Visakhapatnam (Urban Coastal)</option>
+              <option value="krishna">Machilipatnam / Krishna</option>
+              <option value="bapatla">Bapatla</option>
+              <option value="srikakulam">Srikakulam</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.75rem; color:#94a3b8;">Select Language / భాష ఎంచుకోండి:</label>
+            <select class="filter-select" id="citizen-lang-select">
+              <option value="en">English</option>
+              <option value="te" selected>తెలుగు (Telugu)</option>
+              <option value="hi">हिन्दी (Hindi)</option>
+              <option value="or">ଓଡ଼ିଆ (Odia)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Nearest Shelter Card -->
+        <div class="citizen-box">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+            <h4 style="color:#38bdf8; font-size:0.95rem;">🛡️ Nearest Verified Multi-Purpose Cyclone Shelter (MPCS)</h4>
+            <span style="font-family:var(--font-mono); color:#34d399; font-weight:700;" id="shelter-distance">1.2 km away</span>
+          </div>
+          <div style="font-weight:700; font-size:1.1rem; color:#fff;" id="shelter-name">
+            Kakinada Port High School MPCS Shelter
+          </div>
+          <div style="font-size:0.78rem; color:#94a3b8; margin-top:0.2rem;" id="shelter-elevation">
+            Elevation: 8.2m MSL (Safe from 4.2m Surge) • Capacity: 1,500 Persons • Solar DG Backup Active
+          </div>
+        </div>
+
+        <!-- AI Guidance Box with Voice Audio Playback -->
+        <div class="citizen-box" style="background:#090e17; border-color:#0284c7;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+            <span style="font-size:0.78rem; font-weight:700; color:#38bdf8;">✨ Gemini Multilingual Safety Instructions:</span>
+            <button class="voice-btn" onclick="playVoiceWarning()">
+              <span>🔊 Listen to Voice Audio</span>
+            </button>
+          </div>
+          <p style="font-size:0.85rem; line-height:1.6; color:#f1f5f9;" id="citizen-guidance-text">
+            దయచేసి తీర ప్రాంత ప్రజలు వెంటనే సురక్షితమైన తుఫాను పునరావాస కేంద్రానికి (MPCS) చేరుకోండి. అత్యవసర వస్తువులు, మందులు మరియు తాగునీరు వెంట ఉంచుకోండి.
+          </p>
+        </div>
+
+        <!-- Official Warning Links -->
+        <div style="display:flex; gap:0.5rem; justify-content:center; margin-top:0.75rem;">
+          <a href="https://mausam.imd.gov.in" target="_blank" style="color:#38bdf8; font-size:0.75rem; text-decoration:none;">🔗 Official IMD Bulletins</a>
+          <span style="color:#64748b;">•</span>
+          <a href="https://sachet.ndma.gov.in" target="_blank" style="color:#38bdf8; font-size:0.75rem; text-decoration:none;">🔗 NDMA SACHET National Alerts</a>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="nav-btn" onclick="closeModal('citizen-modal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Area -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- Application JS Controller -->
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
