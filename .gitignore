@@ -3,12 +3,19 @@
 # ==============================================================================
 
 # Environment & Secrets (NEVER COMMIT SENSITIVE API KEYS)
-.env
-.env.local
-.env.*.local
+# Ignore every real environment file. Keep only the documented template.
+.env*
+!.env.example
 *.pem
 *.key
 *.pfx
+*.p12
+*.jks
+id_rsa
+id_ed25519
+*.token
+*.tokens
+*.bak
 api/gee-credentials.json
 *credentials*.json
 !api/gee-credentials.example.json

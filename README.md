@@ -108,6 +108,14 @@ python run.py
 
 Open your browser to **`http://127.0.0.1:8000`** to access the tactical operations dashboard.
 
+## Security and deployment
+
+- Never commit `.env` files, service-account JSON, private keys, databases, or logs. Copy `.env.example` locally and store production secrets in your cloud secret manager.
+- Set a long, unique `ADMIN_API_KEY` before deployment. It is required for operational actions, insurance data, advisory workflows, and billable AI briefing generation; supply it only as the `X-Admin-API-Key` request header from a trusted administrative service.
+- Set `ALLOWED_ORIGINS` to the exact HTTPS frontend origin(s). Do not use `*`.
+- Configure edge rate limiting/WAF for public endpoints. The application includes a basic per-process limit for the public citizen copilot, but it is not a replacement for an edge control.
+- If a credential was ever committed, revoke it and purge its Git history before sharing the repository. Removing it in a later commit is insufficient.
+
 ---
 
 ## 🧪 Automated Test Suite

@@ -3,8 +3,12 @@ import json
 import sqlite3
 import hashlib
 import re
+import hmac
+import time
+from collections import defaultdict, deque
+from threading import Lock
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, HTTPException, Query, Body
+from fastapi import FastAPI, HTTPException, Query, Body, Depends, Header, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -37,13 +41,49 @@ app = FastAPI(
     version="3.0.0"
 )
 
+ALLOWED_ORIGINS = [
+    origin.strip() for origin in os.environ.get(
+        "ALLOWED_ORIGINS", "http://127.0.0.1:8000,http://localhost:8000"
+    ).split(",") if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Admin-API-Key"],
 )
+
+
+def require_admin(x_admin_api_key: Optional[str] = Header(default=None)) -> None:
+    """Protect operational data and billable AI endpoints from anonymous access."""
+    expected_key = os.environ.get("ADMIN_API_KEY")
+    if not expected_key:
+        raise HTTPException(status_code=503, detail="Operational API is disabled until ADMIN_API_KEY is configured.")
+    if not x_admin_api_key or not hmac.compare_digest(x_admin_api_key, expected_key):
+        raise HTTPException(status_code=401, detail="Administrator authentication required.")
+
+
+try:
+    PUBLIC_AI_RATE_LIMIT = max(1, int(os.environ.get("PUBLIC_AI_RATE_LIMIT", "10")))
+except ValueError:
+    PUBLIC_AI_RATE_LIMIT = 10
+_public_ai_requests: Dict[str, deque] = defaultdict(deque)
+_public_ai_lock = Lock()
+
+
+def limit_public_ai(request: Request) -> None:
+    """Small in-process guard; production should also enforce this at the edge."""
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    with _public_ai_lock:
+        attempts = _public_ai_requests[client_ip]
+        while attempts and now - attempts[0] >= 3600:
+            attempts.popleft()
+        if len(attempts) >= PUBLIC_AI_RATE_LIMIT:
+            raise HTTPException(status_code=429, detail="Hourly AI request limit exceeded.")
+        attempts.append(now)
 
 # Include Custom API Router from /api folder
 try:
@@ -493,7 +533,7 @@ def get_satellite_layers():
 
 # 9. Automated Advisory & Dispatch Workflow (Human-in-the-Loop)
 @app.get("/api/advisories")
-def list_advisories():
+def list_advisories(_: None = Depends(require_admin)):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM advisories ORDER BY timestamp DESC;")
@@ -502,7 +542,7 @@ def list_advisories():
     return advisories
 
 @app.post("/api/advisories/generate")
-def generate_advisory(payload: Dict[str, Any] = Body(...)):
+def generate_advisory(payload: Dict[str, Any] = Body(...), _: None = Depends(require_admin)):
     district_id = payload.get("district_id", "kakinada")
     target_audience = payload.get("target_audience", "District Disaster Operations Team & Utilities")
     evidence = payload.get("evidence", {
@@ -536,7 +576,7 @@ def generate_advisory(payload: Dict[str, Any] = Body(...)):
     }
 
 @app.post("/api/advisories/approve")
-def approve_advisory(approval: AdvisoryApproval):
+def approve_advisory(approval: AdvisoryApproval, _: None = Depends(require_admin)):
     conn = get_connection()
     cursor = conn.cursor()
     status = "Dispatched" if approval.approved else "Rejected"
@@ -559,7 +599,7 @@ def approve_advisory(approval: AdvisoryApproval):
 # 10. Parametric Insurance Readiness Triggers
 # 10. Parametric Insurance Readiness Triggers & Event Monitoring
 @app.get("/api/insurance/triggers")
-def get_insurance_triggers(update_id: str = "update-03"):
+def get_insurance_triggers(update_id: str = "update-03", _: None = Depends(require_admin)):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM insurance_policies;")
@@ -700,8 +740,8 @@ def get_insurance_triggers(update_id: str = "update-03"):
     return results
 
 @app.get("/api/insurance/policies/{policy_id}")
-def get_insurance_policy_detail(policy_id: str, update_id: str = "update-03"):
-    triggers = get_insurance_triggers(update_id=update_id)
+def get_insurance_policy_detail(policy_id: str, update_id: str = "update-03", _: None = Depends(require_admin)):
+    triggers = get_insurance_triggers(update_id=update_id, _=None)
     for t in triggers:
         if t["policy_id"] == policy_id:
             return t
@@ -710,7 +750,7 @@ def get_insurance_policy_detail(policy_id: str, update_id: str = "update-03"):
 
 # 11. Action Queue Logging & Management
 @app.get("/api/actions")
-def get_actions(district: Optional[str] = None):
+def get_actions(district: Optional[str] = None, _: None = Depends(require_admin)):
     conn = get_connection()
     cursor = conn.cursor()
     if district and district.lower() != "all":
@@ -722,7 +762,7 @@ def get_actions(district: Optional[str] = None):
     return actions
 
 @app.post("/api/actions")
-def create_action(payload: Dict[str, Any] = Body(...)):
+def create_action(payload: Dict[str, Any] = Body(...), _: None = Depends(require_admin)):
     conn = get_connection()
     cursor = conn.cursor()
     aid = f"act-{os.urandom(3).hex()}"
@@ -744,7 +784,7 @@ def create_action(payload: Dict[str, Any] = Body(...)):
     return {"status": "created", "action_id": aid}
 
 @app.patch("/api/actions/{action_id}")
-def update_action_status(action_id: str, payload: ActionUpdate):
+def update_action_status(action_id: str, payload: ActionUpdate, _: None = Depends(require_admin)):
     conn = get_connection()
     cursor = conn.cursor()
     updates = []
@@ -770,7 +810,7 @@ def update_action_status(action_id: str, payload: ActionUpdate):
 
 # 12. District Preparedness Executive Briefing Generator
 @app.get("/api/briefing/{district_id}")
-def get_district_briefing(district_id: str, update_id: str = "update-03"):
+def get_district_briefing(district_id: str, update_id: str = "update-03", _: None = Depends(require_admin)):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM districts WHERE id = ?;", (district_id.lower(),))
@@ -856,7 +896,8 @@ def get_nearest_shelter(lat: float, lon: float, district: Optional[str] = None):
     return nearest_list[:3]
 
 @app.post("/api/citizen/copilot")
-def citizen_copilot_endpoint(payload: Dict[str, Any] = Body(...)):
+def citizen_copilot_endpoint(request: Request, payload: Dict[str, Any] = Body(...)):
+    limit_public_ai(request)
     query = payload.get("query", "Is it safe to stay at home or should I evacuate?")
     district = payload.get("district", "Kakinada")
     language = payload.get("language", "en")

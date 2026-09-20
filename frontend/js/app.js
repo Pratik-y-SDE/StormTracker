@@ -3,19 +3,10 @@
  * Frontend Controller & Geospatial Intelligence Dashboard (Light Command-Centre Theme)
  */
 
-// Base API URL configuration for multi-target deployment (Cloud Run + GitHub Pages)
+// The browser only talks to the same origin. Do not accept a URL from a query
+// parameter or local storage: that lets phishing links redirect the dashboard
+// to an attacker-controlled API.
 function getApiBase() {
-  try {
-    const urlParam = new URLSearchParams(window.location.search).get('backend_url');
-    if (urlParam) {
-      const clean = urlParam.replace(/\/+$/, '');
-      localStorage.setItem('ZATICS_API_BASE', clean);
-      return clean;
-    }
-    const stored = localStorage.getItem('ZATICS_API_BASE');
-    if (stored) return stored;
-    if (window.ZATICS_API_URL) return window.ZATICS_API_URL.replace(/\/+$/, '');
-  } catch (e) {}
   return '';
 }
 
@@ -1126,7 +1117,9 @@ function showToast(msg, type = 'info') {
 
   const toast = document.createElement('div');
   toast.className = 'toast';
-  toast.innerHTML = `<span>${msg}</span>`;
+  const label = document.createElement('span');
+  label.textContent = msg;
+  toast.appendChild(label);
   container.appendChild(toast);
 
   setTimeout(() => {
@@ -1138,7 +1131,15 @@ function showToast(msg, type = 'info') {
 // Simple Markdown parser
 function renderMarkdown(md) {
   if (!md) return '';
-  return md
+  // Escape untrusted model/API text before applying this deliberately small
+  // Markdown subset. This prevents generated text from becoming executable HTML.
+  const escaped = String(md)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+  return escaped
     .replace(/^### (.*$)/gim, '<h4 style="color:#2563eb; margin:0.8rem 0 0.3rem 0; font-weight:800;">$1</h4>')
     .replace(/^## (.*$)/gim, '<h3 style="color:#0f172a; margin:1rem 0 0.4rem 0; font-weight:800; border-bottom:1px solid #e2e8f0; padding-bottom:4px;">$1</h3>')
     .replace(/^# (.*$)/gim, '<h2 style="color:#0f172a; margin:1.2rem 0 0.5rem 0; font-weight:800;">$1</h2>')
