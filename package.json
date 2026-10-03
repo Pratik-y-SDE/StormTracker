@@ -1,0 +1,17 @@
+{
+  "name": "stormtrace-zatics-frontend",
+  "version": "3.0.0",
+  "description": "ZATICS v3.0 Cyclone Impact Forecaster — Anticipatory Action Platform",
+  "scripts": {
+    "build": "node -e \"const fs=require('fs'); fs.cpSync('frontend', 'dist', {recursive:true}); console.log('Built dist/ successfully');\"",
+    "start": "python run.py"
+  },
+  "keywords": [
+    "cyclone",
+    "forecasting",
+    "geospatial",
+    "anticipatory-action"
+  ],
+  "author": "ZATICS Team",
+  "license": "MIT"
+}
