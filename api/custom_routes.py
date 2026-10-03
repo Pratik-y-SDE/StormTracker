@@ -561,6 +561,199 @@ def infrastructure_nearby(
     )
 
 
+
+@router.get("/impact")
+def get_impact(
+    event_id: str = Query(
+        ...,
+        min_length=10,
+        description="Normalized GDACS event ID, e.g. gdacs:EQ:1554552:1721238",
+    ),
+    radius_km: float = Query(10.0, gt=0, le=25),
+    categories: Optional[str] = Query(
+        None,
+        description="Comma-separated infrastructure categories.",
+    ),
+) -> Dict[str, Any]:
+    """
+    Combine one normalized GDACS event with nearby OSM infrastructure.
+
+    This endpoint reports potential exposure only. It does not infer or
+    confirm physical damage to infrastructure.
+    """
+    normalized_event_id = event_id.strip()
+
+    # Expected normalized format:
+    # gdacs:<event_type>:<event_id>:<episode_id>
+    parts = normalized_event_id.split(":")
+    if len(parts) != 4 or parts[0].lower() != "gdacs":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "event_id must use the normalized GDACS format "
+                "gdacs:<event_type>:<event_id>:<episode_id>."
+            ),
+        )
+
+    event_type = parts[1].upper()
+    if event_type not in GDACS_EVENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported GDACS event type: {event_type}.",
+        )
+
+    try:
+        provider_event_id = int(parts[2])
+        episode_id = int(parts[3])
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="GDACS event_id and episode_id must be numeric.",
+        ) from exc
+
+    requested_categories = parse_list(categories)
+    if not requested_categories:
+        requested_categories = {
+            "hospital",
+            "clinic",
+            "shelter",
+            "fire_station",
+            "police",
+            "school",
+        }
+
+    invalid_categories = [
+        category
+        for category in requested_categories
+        if category not in INFRASTRUCTURE_TAGS
+    ]
+    if invalid_categories:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Unsupported infrastructure category.",
+                "invalid_categories": sorted(invalid_categories),
+                "supported_categories": sorted(INFRASTRUCTURE_TAGS),
+            },
+        )
+
+    # Search the first provider page and match the normalized event ID.
+    # GDACS currently limits a page to 100 records. We expose this limitation
+    # instead of pretending that this lookup is an unlimited event index.
+    data = fetch_gdacs(
+        event_types={event_type},
+        page_size=MAX_GDACS_PAGE_SIZE,
+        page_number=1,
+    )
+
+    event: Optional[Dict[str, Any]] = None
+    for feature in data.get("features", []):
+        candidate = normalize_gdacs_feature(feature)
+        if not candidate:
+            continue
+
+        if (
+            candidate["provider_event_id"] == provider_event_id
+            and candidate["episode_id"] == episode_id
+        ):
+            event = candidate
+            break
+
+    if event is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "message": "GDACS event was not found in the inspected provider page.",
+                "event_id": normalized_event_id,
+                "provider_page_size": MAX_GDACS_PAGE_SIZE,
+                "limitation": (
+                    "Impact lookup currently inspects the first GDACS page "
+                    "for the selected event type."
+                ),
+            },
+        )
+
+    latitude = event["location"].get("latitude")
+    longitude = event["location"].get("longitude")
+
+    if latitude is None or longitude is None:
+        raise HTTPException(
+            status_code=422,
+            detail="The selected GDACS event does not have usable coordinates.",
+        )
+
+    infrastructure_result = fetch_osm_infrastructure(
+        latitude=float(latitude),
+        longitude=float(longitude),
+        radius_km=radius_km,
+        categories=sorted(requested_categories),
+    )
+
+    infrastructure = infrastructure_result.get("infrastructure", [])
+
+    by_category: Dict[str, Dict[str, Any]] = {}
+    for category in sorted(requested_categories):
+        matches = [
+            item
+            for item in infrastructure
+            if item.get("category") == category
+        ]
+
+        nearest = min(
+            matches,
+            key=lambda item: item["distance_km"],
+            default=None,
+        )
+
+        by_category[category] = {
+            "count": len(matches),
+            "nearest": nearest,
+        }
+
+    nearest_facilities = sorted(
+        infrastructure,
+        key=lambda item: item["distance_km"],
+    )[:10]
+
+    return {
+        "source": {
+            "disaster_provider": "GDACS",
+            "infrastructure_provider": "OpenStreetMap Overpass",
+            "status": "live",
+            "fetched_at": utc_now_iso(),
+            "attribution": (
+                "Global Disaster Awareness and Coordination System, GDACS; "
+                "© OpenStreetMap contributors"
+            ),
+        },
+        "event": event,
+        "query": {
+            "radius_km": radius_km,
+            "categories": sorted(requested_categories),
+        },
+        "exposure": {
+            "total_nearby_features": len(infrastructure),
+            "by_category": by_category,
+            "nearest_facilities": nearest_facilities,
+        },
+        "assessment": {
+            "type": "potential_exposure",
+            "damage_confirmed": False,
+            "statement": (
+                "Nearby infrastructure is identified from OpenStreetMap. "
+                "Proximity to a GDACS hazard does not establish physical damage "
+                "or operational status."
+            ),
+        },
+        "limitations": {
+            "osm_coverage_varies": True,
+            "gdacs_event_lookup_page_size": MAX_GDACS_PAGE_SIZE,
+            "damage_detection": False,
+        },
+    }
+
+
+
 @router.get("/health")
 def custom_api_health() -> Dict[str, Any]:
     return {
