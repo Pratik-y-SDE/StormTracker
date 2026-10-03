@@ -8,6 +8,9 @@ IMD is intentionally not included until authorized API access is available.
 All provider data is normalized behind /api/custom.
 """
 
+import time
+import os
+import json
 from datetime import datetime, timezone
 import math
 from typing import Any, Dict, List, Optional, Set
@@ -200,6 +203,362 @@ def fetch_gdacs(
             status_code=502,
             detail="GDACS returned invalid JSON.",
         ) from exc
+
+
+
+# ---------------------------------------------------------------------------
+# OpenStreetMap / Overpass infrastructure integration
+# ---------------------------------------------------------------------------
+
+OVERPASS_URL = os.getenv(
+    "OVERPASS_URL",
+    "https://overpass-api.de/api/interpreter",
+)
+
+OVERPASS_TIMEOUT = int(os.getenv("OVERPASS_TIMEOUT", "20"))
+OVERPASS_CACHE_TTL_SECONDS = int(os.getenv("OVERPASS_CACHE_TTL_SECONDS", "300"))
+
+# Public Overpass instances are shared infrastructure. Keep requests small,
+# cache repeated queries, and never issue parallel/bulk queries.
+OVERPASS_USER_AGENT = os.getenv(
+    "OVERPASS_USER_AGENT",
+    "StormTracker/1.0 (disaster-resilience-hackathon)",
+)
+
+INFRASTRUCTURE_TAGS = {
+    "hospital": [
+        'nwr["amenity"="hospital"]',
+    ],
+    "clinic": [
+        'nwr["amenity"="clinic"]',
+    ],
+    "shelter": [
+        'nwr["amenity"="shelter"]',
+        'nwr["emergency"="shelter"]',
+    ],
+    "fire_station": [
+        'nwr["amenity"="fire_station"]',
+    ],
+    "police": [
+        'nwr["amenity"="police"]',
+    ],
+    "school": [
+        'nwr["amenity"="school"]',
+    ],
+    "road": [
+        'way["highway"]',
+    ],
+}
+
+_osm_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _cache_get(key: str) -> Optional[dict]:
+    item = _osm_cache.get(key)
+    if not item:
+        return None
+
+    cached_at, value = item
+    if time.time() - cached_at > OVERPASS_CACHE_TTL_SECONDS:
+        _osm_cache.pop(key, None)
+        return None
+
+    return value
+
+
+def _cache_set(key: str, value: dict) -> None:
+    # Keep the in-memory cache deliberately small.
+    if len(_osm_cache) >= 100:
+        oldest_key = min(_osm_cache, key=lambda k: _osm_cache[k][0])
+        _osm_cache.pop(oldest_key, None)
+
+    _osm_cache[key] = (time.time(), value)
+
+
+def _element_coordinates(element: dict) -> tuple[Optional[float], Optional[float]]:
+    lat = element.get("lat")
+    lon = element.get("lon")
+
+    center = element.get("center") or {}
+    if lat is None:
+        lat = center.get("lat")
+    if lon is None:
+        lon = center.get("lon")
+
+    try:
+        return (
+            float(lat) if lat is not None else None,
+            float(lon) if lon is not None else None,
+        )
+    except (TypeError, ValueError):
+        return None, None
+
+
+def _osm_name(tags: dict) -> str:
+    return (
+        tags.get("name")
+        or tags.get("official_name")
+        or tags.get("short_name")
+        or "Unnamed facility"
+    )
+
+
+def _normalize_osm_element(
+    element: dict,
+    category: str,
+    query_lat: float,
+    query_lon: float,
+) -> Optional[dict]:
+    lat, lon = _element_coordinates(element)
+    if lat is None or lon is None:
+        return None
+
+    tags = element.get("tags") or {}
+
+    return {
+        "id": f"osm:{element.get('type', 'unknown')}:{element.get('id', '')}",
+        "osm_type": element.get("type"),
+        "osm_id": element.get("id"),
+        "category": category,
+        "name": _osm_name(tags),
+        "latitude": lat,
+        "longitude": lon,
+        "distance_km": round(haversine_km(query_lat, query_lon, lat, lon), 2),
+        "tags": {
+            key: value
+            for key, value in tags.items()
+            if key in {
+                "amenity",
+                "emergency",
+                "highway",
+                "name",
+                "official_name",
+                "short_name",
+                "operator",
+                "phone",
+                "website",
+            }
+        },
+    }
+
+
+def _build_overpass_query(
+    latitude: float,
+    longitude: float,
+    radius_m: int,
+    categories: list[str],
+) -> str:
+    statements: list[str] = []
+
+    for category in categories:
+        statements.extend(
+            f"{selector}(around:{radius_m},{latitude},{longitude});"
+            for selector in INFRASTRUCTURE_TAGS[category]
+        )
+
+    return (
+        "[out:json][timeout:"
+        + str(OVERPASS_TIMEOUT)
+        + "];\n(\n"
+        + "\n".join(statements)
+        + "\n);\nout center tags;"
+    )
+
+
+def fetch_osm_infrastructure(
+    latitude: float,
+    longitude: float,
+    radius_km: float,
+    categories: list[str],
+) -> dict:
+    radius_m = max(100, min(int(radius_km * 1000), 25000))
+
+    cache_key = json.dumps(
+        {
+            "lat": round(latitude, 4),
+            "lon": round(longitude, 4),
+            "radius_m": radius_m,
+            "categories": categories,
+        },
+        sort_keys=True,
+    )
+
+    cached = _cache_get(cache_key)
+    if cached:
+        cached = dict(cached)
+        cached["source"] = dict(cached["source"])
+        cached["source"]["status"] = "cache"
+        cached["source"]["cached"] = True
+        return cached
+
+    query = _build_overpass_query(
+        latitude,
+        longitude,
+        radius_m,
+        categories,
+    )
+
+    headers = {
+        "User-Agent": OVERPASS_USER_AGENT,
+        "Accept": "application/json",
+    }
+
+    fetched_at = utc_now_iso()
+
+    try:
+        response = requests.post(
+            OVERPASS_URL,
+            data={"data": query},
+            headers=headers,
+            timeout=OVERPASS_TIMEOUT + 5,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "provider": "OpenStreetMap Overpass",
+                "status": "unavailable",
+                "message": str(exc),
+                "hint": "Public Overpass instances can be busy or rate-limited. Retry later or configure OVERPASS_URL.",
+            },
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "provider": "OpenStreetMap Overpass",
+                "status": "invalid_response",
+                "message": "Overpass returned a response that was not valid JSON.",
+            },
+        ) from exc
+
+    elements = payload.get("elements", [])
+    infrastructure: list[dict] = []
+
+    # A single element can match multiple categories. De-duplicate by OSM id.
+    seen: set[tuple[str, int, str]] = set()
+
+    for element in elements:
+        tags = element.get("tags") or {}
+
+        matched_categories = []
+        for category in categories:
+            selectors = INFRASTRUCTURE_TAGS[category]
+
+            # Determine category from the same tags used in the Overpass query.
+            if category == "hospital" and tags.get("amenity") == "hospital":
+                matched_categories.append(category)
+            elif category == "clinic" and tags.get("amenity") == "clinic":
+                matched_categories.append(category)
+            elif category == "shelter" and (
+                tags.get("amenity") == "shelter"
+                or tags.get("emergency") == "shelter"
+            ):
+                matched_categories.append(category)
+            elif category == "fire_station" and tags.get("amenity") == "fire_station":
+                matched_categories.append(category)
+            elif category == "police" and tags.get("amenity") == "police":
+                matched_categories.append(category)
+            elif category == "school" and tags.get("amenity") == "school":
+                matched_categories.append(category)
+            elif category == "road" and "highway" in tags:
+                matched_categories.append(category)
+
+        for category in matched_categories:
+            element_key = (
+                str(element.get("type")),
+                int(element.get("id", 0)),
+                category,
+            )
+            if element_key in seen:
+                continue
+
+            seen.add(element_key)
+
+            normalized = _normalize_osm_element(
+                element,
+                category,
+                latitude,
+                longitude,
+            )
+            if normalized:
+                infrastructure.append(normalized)
+
+    infrastructure.sort(key=lambda item: item["distance_km"])
+
+    result = {
+        "source": {
+            "provider": "OpenStreetMap Overpass",
+            "status": "live",
+            "url": OVERPASS_URL,
+            "fetched_at": fetched_at,
+            "attribution": "© OpenStreetMap contributors",
+            "cached": False,
+        },
+        "query": {
+            "latitude": latitude,
+            "longitude": longitude,
+            "radius_km": round(radius_m / 1000, 2),
+            "categories": categories,
+        },
+        "count": len(infrastructure),
+        "infrastructure": infrastructure,
+        "limitations": {
+            "potentially_nearby": True,
+            "damage_confirmed": False,
+            "completeness": "OpenStreetMap coverage varies by location.",
+            "public_overpass": True,
+        },
+    }
+
+    _cache_set(cache_key, result)
+    return result
+
+
+
+
+@router.get("/infrastructure/nearby")
+def infrastructure_nearby(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    radius_km: float = Query(5.0, gt=0, le=25),
+    categories: Optional[str] = Query(
+        None,
+        description="Comma-separated categories: hospital,clinic,shelter,fire_station,police,school,road",
+    ),
+):
+    """Return nearby OpenStreetMap infrastructure around a location."""
+    requested = parse_list(categories)
+
+    if not requested:
+        requested = [
+            "hospital",
+            "clinic",
+            "shelter",
+            "fire_station",
+            "police",
+            "school",
+        ]
+
+    invalid = [item for item in requested if item not in INFRASTRUCTURE_TAGS]
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Unsupported infrastructure category.",
+                "invalid_categories": invalid,
+                "supported_categories": sorted(INFRASTRUCTURE_TAGS),
+            },
+        )
+
+    return fetch_osm_infrastructure(
+        latitude=lat,
+        longitude=lon,
+        radius_km=radius_km,
+        categories=requested,
+    )
 
 
 @router.get("/health")
